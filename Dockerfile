@@ -12,6 +12,6 @@ RUN pip3 install --no-cache-dir --upgrade -r /app/requirements.txt
 
 COPY app.py /app
 
-CMD ["flask", "run"]
+CMD ["flask", "run", "--host=0.0.0.0"]
 
 EXPOSE 5000
