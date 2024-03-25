@@ -1,0 +1,26 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: script-ls
+  namespace: vindular-dev
+spec:
+  params:
+    - default: source
+      description: The path to list the files
+      name: pathToList
+      type: string
+  steps:
+    - computeResources: {}
+      image: ubuntu
+      name: ''
+      script: |
+        #!/usr/bin/env bash
+        echo "Workspace path:"
+        cd $(workspaces.source.path)
+        pwd
+
+        echo "$(params.pathToList) path:"
+        cd $(workspaces.source.path)/$(params.pathToList)
+        pwd
+  workspaces:
+    - name: source

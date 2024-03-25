@@ -1,0 +1,66 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: docker-build
+  namespace: vindular-dev
+spec:
+  description: |
+    This pipeline clones a git repo, builds a Docker image and
+    pushes it to a registry    
+  params:
+    - name: repo-url
+      type: string
+    - default: sample-app
+      name: app
+      type: string
+    - default: 'image-registry.openshift-image-registry.svc:5000/vindular-dev'
+      name: image-reference
+      type: string
+    - default: source-code
+      name: context
+      type: string
+    - default: source-code/Dockerfile
+      name: dockerfilepath
+      type: string
+  tasks:
+    - name: fetch-source
+      params:
+        - name: url
+          value: $(params.repo-url)
+      taskRef:
+        kind: Task
+        name: git-clone
+      workspaces:
+        - name: output
+          subPath: source-code
+          workspace: shared-data
+    - name: ls-path
+      params:
+        - name: pathToList
+          value: source-code
+      runAfter:
+        - fetch-source
+      taskRef:
+        kind: Task
+        name: script-ls
+      workspaces:
+        - name: source
+          workspace: shared-data
+    - name: docker-build
+      params:
+        - name: image
+          value: $(params.image-reference)/$(params.app)
+        - name: context
+          value: $(params.context)
+        - name: dockerfile
+          value: $(params.dockerfilepath)
+      runAfter:
+        - fetch-source
+      taskRef:
+        kind: Task
+        name: docker-build
+      workspaces:
+        - name: source
+          workspace: shared-data
+  workspaces:
+    - name: shared-data

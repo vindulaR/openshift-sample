@@ -1,0 +1,117 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  annotations:
+    openshift.io/installed-from: Tektonhub
+    tekton.dev/categories: Image Build
+    tekton.dev/displayName: docker-build
+    tekton.dev/pipelines.minVersion: 0.12.1
+    tekton.dev/platforms: linux/amd64
+    tekton.dev/tags: 'docker, build-image, push-image, dind'
+  generation: 3
+  labels:
+    app.kubernetes.io/version: '0.1'
+  name: docker-build
+  namespace: vindular-dev
+spec:
+  description: This task will build and push an image using docker. The task will build an out image out of a Dockerfile. This image will be pushed to an image registry. The image will be built and pushed using a dind sidecar over TCP+TLS.
+  params:
+    - description: Reference of the image docker will produce.
+      name: image
+      type: string
+    - default: 'docker.io/library/docker:stable@sha256:18ff92d3d31725b53fa6633d60bed323effb6d5d4588be7b547078d384e0d4bf'
+      description: The location of the docker builder image.
+      name: builder_image
+      type: string
+    - default: 'docker:dind'
+      description: The location of the docker-in-docker image.
+      name: dind_image
+      type: string
+    - default: ./Dockerfile
+      description: Path to the Dockerfile to build.
+      name: dockerfile
+      type: string
+    - default: .
+      description: Path to the directory to use as context.
+      name: context
+      type: string
+    - default: ''
+      description: Extra parameters passed for the build command when building images.
+      name: build_extra_args
+      type: string
+    - default: ''
+      description: Extra parameters passed for the push command when pushing images.
+      name: push_extra_args
+      type: string
+    - default: ''
+      description: Allows the user to push to an insecure registry that has been specified
+      name: insecure_registry
+      type: string
+  results:
+    - description: Digest of the image just built.
+      name: IMAGE_DIGEST
+      type: string
+  sidecars:
+    - args:
+        - '--storage-driver=vfs'
+        - '--userland-proxy=false'
+        - '--debug'
+        - '--insecure-registry=$(params.insecure_registry)'
+      computeResources: {}
+      env:
+        - name: DOCKER_TLS_CERTDIR
+          value: /certs
+      image: $(params.dind_image)
+      name: server
+      readinessProbe:
+        exec:
+          command:
+            - ls
+            - /certs/client/ca.pem
+        periodSeconds: 1
+      securityContext:
+        privileged: false
+      volumeMounts:
+        - mountPath: /certs/client
+          name: dind-certs
+  steps:
+    - computeResources: {}
+      env:
+        - name: DOCKER_HOST
+          value: 'tcp://localhost:2376'
+        - name: DOCKER_TLS_VERIFY
+          value: '1'
+        - name: DOCKER_CERT_PATH
+          value: /certs/client
+      image: $(params.builder_image)
+      name: docker-build
+      script: |
+        docker build \
+          $(params.build_extra_args) \
+          --no-cache \
+          -f $(workspaces.source.path)/$(params.dockerfile) -t $(params.image) $(workspaces.source.path)/$(params.context)
+      volumeMounts:
+        - mountPath: /certs/client
+          name: dind-certs
+      workingDir: $(workspaces.source.path)
+    - computeResources: {}
+      env:
+        - name: DOCKER_HOST
+          value: 'tcp://localhost:2376'
+        - name: DOCKER_TLS_VERIFY
+          value: '1'
+        - name: DOCKER_CERT_PATH
+          value: /certs/client
+      image: $(params.builder_image)
+      name: docker-push
+      script: |
+        docker push $(params.push_extra_args) $(params.image)
+      volumeMounts:
+        - mountPath: /certs/client
+          name: dind-certs
+      workingDir: $(workspaces.source.path)
+  volumes:
+    - emptyDir: {}
+      name: dind-certs
+  workspaces:
+    - name: source
